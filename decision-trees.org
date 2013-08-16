@@ -1,0 +1,212 @@
+* TODO Implementation
+  Let’s start with a naïve ID3 (iterative dichotomizer 3), using
+  brute-force to classify the continuous attribute.
+
+  #+BEGIN_SRC scheme :comments link :tangle decision-trees.scm :shebang #!/usr/bin/env chicken-scheme
+    (use debug
+         define-record-and-printer
+         srfi-1
+         srfi-69
+         statistics
+         test)
+    
+    (define (log-b z b)
+      (/ (log z) (log b)))
+    
+    (define log-2 (cute log-b <> 2))
+    
+    (define (frequencies values)
+      (let ((frequencies (make-hash-table)))
+        (for-each (lambda (value)
+                    (hash-table-update!/default frequencies
+                                                value
+                                                add1
+                                                0))
+          values)
+        (debug (hash-table->alist frequencies))
+        frequencies))
+    
+    (define (probabilities values)
+      (let ((n (length values))
+            (frequencies (frequencies values)))
+        (hash-table-walk frequencies
+          (lambda (value frequency)
+            (hash-table-set! frequencies value (/ frequency n))))
+        frequencies))
+    
+    (define (entropy values)
+      (let ((probabilities (probabilities values)))
+        (hash-table-fold
+         probabilities
+         (lambda (value probability entropy)
+           (- entropy (* probability (log-2 probability))))
+         0)))
+    
+    (define-record-and-printer attribute
+      name
+      type
+      domain
+      index)
+    
+    (define (values instances attribute)
+      (map (cute list-ref <> (attribute-index attribute))
+           instances))
+    
+    (define (continuous? attribute)
+      (eq? (attribute-type attribute) 'continuous))
+    
+    (define (discrete? attribute)
+      (eq? (attribute-type attribute) 'discrete))
+    
+    (define sample-size (make-parameter 1000))
+    
+    (define (maybe-sample-domain instances attribute)
+      (if (discrete? attribute)
+          (attribute-domain attribute)
+          (random-sample
+           (sample-size)
+           (delete-duplicates
+            (values instances attribute)))))
+    
+    (define (select-instances instances predicate attribute)
+      (filter (lambda (instance)
+                (predicate (list-ref instance (attribute-index attribute))))
+              instances))
+    
+    (define (continuous-predicate comparandum)
+      (lambda (comparator) (< comparator comparandum)))
+    
+    (define (discrete-predicate comparandum)
+      (lambda (comparator) (eq? threshold comparandum)))
+    
+    (define (attribute-predicate attribute value)
+      (if (attribute-continuous? attribute)
+          (continuous-predicate value)
+          (discrete-predicate value)))
+    
+    (define (dataset-length dataset)
+      (length (dataset-data dataset)))
+    
+    (define (information-gain instances input target)
+      (let ((total-entropy (entropy (attribute-values instances target)))
+            (domain (maybe-sample-domain instances input)))
+        (map (lambda (value)
+               (let ((selected-instances
+                      (select-instances
+                       instances
+                       (attribute-predicate input value)
+                       input)))
+                 (entropy (values selected-instances target))))
+             domain)))
+    
+    (define (attribute-ref dataset attribute)
+      (hash-table-ref (dataset-name->attribute dataset) attribute))
+    
+    (let ((x (make-attribute "x" 'continuous #f 0))
+          (y (make-attribute "y" 'discrete '(#t #f) 1)))
+      (let ((instances '((0.5 #f)
+                         (0.7 #t)
+                         (0.9 #t))))
+        (debug (values instances x)
+               (select-instances instances (cute < <> 0.6) x)
+               (maybe-sample-domain instances x)
+               (information-gain instances x y))))
+  #+END_SRC
+  
+  For continuous variables, take every $nth$ quantile? Or just sample
+  at most $n$.
+
+  Input attributes, target attributes, instances, inducer.
+* [[http://citeseerx.ist.psu.edu/viewdoc/summary?doi%3D10.1.1.61.9087][Rokach, Top-Down Induction of Decision Trees Classifiers—A Survey]]
+  - Most of the algorithms (like ID3 and C4.5) require that the target
+    attribute will have only discrete values.
+  - As decision trees use “divide and conquer” method, they tend to
+    perform well if a few highly relevant at- tributes exist, but less
+    so if many complex interac- tions are present
+  - The greedy characteristic of decision trees leads to another
+    disadvantage that should be point it. This is its over-sensitivity
+    to the training set, to irrelevant at- tributes and to noise [12].
+  - Most of the decision trees inducers require rebuilding the tree
+    from scratch for reflecting new data that has became available.
+    Several researches have addressed the issue of updating decision
+    trees incrementally.
+  - Utgoff [68], [69] presents several methods for updating deci- sion
+    trees incrementally. An extension to the CART algorithm that is
+    capable of inducing incrementally is described in Craw-
+    ford [70]).
+* [[http://en.wikipedia.org/wiki/ID3_algorithm][ID3]]
+  - ID3 does not guarantee an optimal solution, it can get stuck in
+    local optimums. It uses a greedy approach by selecting the best
+    attribute to split the dataset on each iteration. One improvement
+    that can be made on the algorithm can be to use backtracking
+    during the search for the optimal decision tree.
+  - ID3 is harder to use on continuous data. If the values of any
+    given attribute is continuous, then there are many more places to
+    split the data on this attribute, and searching for the best
+    value to split by can be time consuming.
+* [[http://www.cis.temple.edu/~giorgio/cis587/readings/id3-c45.html#5][Extensions to ID3]]
+  - In particular, continuous ranges:
+    #+BEGIN_QUOTE
+    We can deal with the case of attributes with continuous ranges as
+    follows. Say that attribute Ci has a continuous range. We examine
+    the values for this attribute in the training set. Say they are,
+    in increasing order, A1, A2, .., Am. Then for each value Aj,
+    j=1,2,..m, we partition the records into those that have Ci values
+    up to and including Aj, and those that have values greater than
+    Aj. For each of these partitions we compute the gain, or gain
+    ratio, and choose the partition that maximizes the gain. In our
+    Golfing example, for humidity, if T is the training set, we
+    determine the information for each partition and find the best
+    partition at 75. Then the range for this attribute becomes {<=75,
+    >75}. Notice that this method involves a substantial number of
+    computations.
+    #+END_QUOTE
+* [[http://en.wikipedia.org/wiki/Boosting_(meta-algorithm)][Boosting]]
+  - Boosting is a machine learning meta-algorithm for reducing bias
+    in supervised learning. Boosting is based on the question posed
+    by Kearns:[1] Can a set of weak learners create a single strong
+    learner? A weak learner is defined to be a classifier which is
+    only slightly correlated with the true classification (it can
+    label examples better than random guessing). In contrast, a
+    strong learner is a classifier that is arbitrarily
+    well-correlated with the true classification.
+* [[http://www.jair.org/media/279/live-279-1538-jair.pdf][Quinlin, Improved Use of Continuous Attributes in C4.5]]
+  - A reported weakness of C4.5 in domains with continuous attributes
+    is addressed by modifying the formation and evaluation of tests on
+    continuous attributes. An MDL-inspired penalty is applied to such
+    tests, eliminating some of them from consideration and altering
+    the relative desirability of all tests. Empirical trials show that
+    the modi cations lead to smaller decision trees with higher
+    predictive accuracies. Results also con rm that a new version of
+    C4.5 incorporating these changes is superior to recent approach
+  - That is, the choice of a test will be biased towards continuous
+    attributes with numerous distinct values.
+  - We return now to the selection of a threshold for a continuous
+    attribute A. If there are N distinct values of A in the set of
+    cases D, there are N - 1 thresholds that could be used for a test
+    on A. Each threshold gives unique subsets D1 and D2 and so the
+    value of the splitting criterion is a function of the threshold.
+    The ability to choose the threshold t so as to maximize this value
+    gives a continuous attribute A an advantage over a discrete
+    attribute
+  - Whereas a test A=? on a discrete attribute A can be speci ed by
+    nominating the attribute involved, a test A t must also include
+    the threshold t; if there are N - 1 possible thresholds for A,
+    this will take an additional log2(N - 1) bits. The first
+    modification is to “charge” this increased cost associated with a
+    test on a continuous attribute to the apparent gain achieved by
+    the test, so reducing the (per-case) information Gain(D, T) by
+    log2(N - 1)/|D|.
+  - To find the set of intervals, the training cases are first sorted
+    on the value of the continu- ous attribute in question. The
+    procedure outlined in Section 2 is used to nd the threshold t that
+    maximizes information gain. The same process is repeated for the
+    corresponding subsets of cases with attribute values below and
+    above t. (Since the cases are not reordered, they need not be
+    re-sorted, and this is the source of the reduced learning times.)
+    If w thresholds are found, the continuous attribute is mapped to a
+    discrete attribute with w+1 values, one for each interval.
+  - Some stopping criterion is required to prevent this process from
+    resulting in a very large number of interval (which could become
+    as numerous as the training cases if all values of the attribute
+    are distinct).
