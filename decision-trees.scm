@@ -2,7 +2,8 @@
 
 ;; [[file:~/prg/org/decision-trees.org::*Implementation][Implementation:1]]
 
-(use debug
+(use csv-xml
+     debug
      define-record-and-printer
      files
      format
@@ -199,7 +200,7 @@
                     (node-description-set!
                      root
                      (if (continuous? best-input)
-                         (format "~a <= ~a"
+                         (format "~a <= ~,2f"
                                  (attribute-name best-input)
                                  (fold max -inf.0
                                        (attribute-values (hash-table-ref/default
@@ -280,16 +281,33 @@
         (lambda () (write-tree-as-dot root)))
     (run (dot -Tpng -o ,png < ,dot))))
 
-(let ((x (make-attribute "x" 'continuous #f 0))
-      (y (make-attribute "y" 'discrete '(#t #f) 1))
-      (z (make-attribute "z" 'discrete '(#t #f) 2)))
-  (let ((instances (list-tabulate 100
-                                  (lambda (i) (let* ((x (random-real))
-                                                (y (< (random-real) 0.5))
-                                                (z (< (random-real) 0.5)))
-                                           (list x y z))))))
+(define (read-instances-from-csv csv)
+  (map (cute map string->number <>)
+       (cdr (call-with-input-file csv csv->list))))
+
+(let ((match (make-attribute "match" 'discrete '(0 1) 0))
+      (address (make-attribute "address" 'continuous #f 1))
+      (first-name (make-attribute "first-name" 'continuous #f 2))
+      (last-name (make-attribute "last-name" 'continuous #f 3))
+      (city (make-attribute "city" 'continuous #f 4))
+      (state (make-attribute "state" 'continuous #f 5))
+      (zip (make-attribute "zip" 'continuous #f 6))
+      (email (make-attribute "email" 'continuous #f 7))
+      (phone (make-attribute "phone" 'continuous #f 8)))
+  (let ((instances (read-instances-from-csv "decision-trees.csv")))
     (let ((root (make-node #f #f #f #f #f #f '())))
-      (id3 (length instances) instances (list x y) z root)
+      (id3 (length instances)
+           instances
+           (list address
+                 first-name
+                 ;; last-name
+                 city
+                 state
+                 zip
+                 email
+                 phone)
+           match
+           root)
       (write-tree-to-png root "decision-trees.png")
       (run (sxiv "decision-trees.png")))))
 
