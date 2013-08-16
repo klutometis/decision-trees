@@ -197,27 +197,28 @@
               ;; (debug test-inputs best-input best-information-gain best-partition)
               (if (null? test-inputs)
                   (begin
-                    (node-description-set!
-                     root
-                     (if (continuous? best-input)
-                         (format "~a <= ~,2f"
-                                 (attribute-name best-input)
-                                 (fold max -inf.0
-                                       (attribute-values (hash-table-ref/default
-                                                          best-partition
-                                                          #t
-                                                          '()) best-input)))
-                         (format "~a?"
-                                 (attribute-name best-input))))
-                    (node-predicate-set!
-                     root
-                     (if (continuous? best-input)
-                         (lambda (value input-value)
-                           (eq?
-                            (<= value
-                                (fold max -inf.0 (attribute-values subinstances best-input)))
-                            input-value)) 
-                         (lambda (value input-value) (eq? value input-value))))
+                    (let ((upper-bound
+                           (fold max -inf.0
+                                 (attribute-values (hash-table-ref/default
+                                                    best-partition
+                                                    #t
+                                                    '()) best-input))))
+                      (node-description-set!
+                       root
+                       (if (continuous? best-input)
+                           (format "~a <= ~,2f"
+                                   (attribute-name best-input)
+                                   upper-bound)
+                           (format "~a?"
+                                   (attribute-name best-input))))
+                     (node-predicate-set!
+                      root
+                      (if (continuous? best-input)
+                          (lambda (value input-value)
+                            (eq?
+                             (<= value upper-bound)
+                             input-value)) 
+                          (lambda (value input-value) (eq? value input-value)))))
                     (node-attribute-set! root best-input) 
                     (node-edges-set!
                      root
@@ -285,6 +286,25 @@
   (map (cute map string->number <>)
        (cdr (call-with-input-file csv csv->list))))
 
+(define (classify root instance)
+  (let iter ((root root))
+    (if (null? (node-edges root))
+        (values
+         (node-value root)
+         (node-probability root)
+         (node-entropy root))
+        (let* ((attribute (node-attribute root))
+               (index (attribute-index attribute))
+               (edges (node-edges root)))
+          (let iter-edges ((edges edges))
+            (unless (null? edges)
+              (let ((edge (car edges)))
+                (if ((node-predicate root)
+                     (list-ref instance index)
+                     (edge-value edge))
+                    (iter (edge-child edge))
+                    (iter-edges (cdr edges))))))))))
+
 (let ((match (make-attribute "match" 'discrete '(0 1) 0))
       (address (make-attribute "address" 'continuous #f 1))
       (first-name (make-attribute "first-name" 'continuous #f 2))
@@ -308,7 +328,18 @@
                  phone)
            match
            root)
-      (write-tree-to-png root "decision-trees.png")
-      (run (sxiv "decision-trees.png")))))
+      ;; (write-tree-to-png root "decision-trees.png")
+      ;; (run (sxiv "decision-trees.png"))
+      (let ((instance (list-ref instances (random (length instances)))))
+        (call-with-values (lambda () (classify root instance))
+          (lambda (classification probability entropy)
+            (let ((expected-classification (list-ref instance (attribute-index match))))
+              (assert (eq? classification expected-classification))
+              (debug instance
+                     classification
+                     expected-classification
+                     (eq? classification expected-classification)
+                     probability
+                     entropy))))))))
 
 ;; Implementation:1 ends here
