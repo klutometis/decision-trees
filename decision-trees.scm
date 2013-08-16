@@ -16,6 +16,9 @@
      statistics
      test)
 
+(require-library aima-csp)
+(import (only aima-csp shuffle))
+
 (define (log-b z b)
   (/ (log z) (log b)))
 
@@ -305,6 +308,28 @@
                     (iter (edge-child edge))
                     (iter-edges (cdr edges))))))))))
 
+(define (run-experiment instances inputs output)
+  (let iter ((rest-instances (shuffle instances))
+             (bag '()))
+    (if (> (/ (length bag) (length instances)) 0.66)
+        (let ((root (make-node #f #f #f #f #f #f '())))
+          (id3 (length bag) bag inputs output root)
+          (let ((experiment (make-hash-table)))
+            (for-each (lambda (instance)
+                        (let ((expected-classification
+                               (list-ref instance (attribute-index output)))
+                              (classification
+                               (classify root instance)))
+                          (hash-table-update!/default
+                           experiment
+                           (eq? expected-classification classification)
+                           add1
+                           0)))
+              rest-instances)
+            experiment))
+        (iter (cdr rest-instances)
+              (cons (car rest-instances) bag)))))
+
 (let ((match (make-attribute "match" 'discrete '(0 1) 0))
       (address (make-attribute "address" 'continuous #f 1))
       (first-name (make-attribute "first-name" 'continuous #f 2))
@@ -314,22 +339,20 @@
       (zip (make-attribute "zip" 'continuous #f 6))
       (email (make-attribute "email" 'continuous #f 7))
       (phone (make-attribute "phone" 'continuous #f 8)))
-  (let ((instances (read-instances-from-csv "decision-trees.csv")))
+  (let ((inputs (list address
+                      first-name
+                      last-name
+                      city
+                      state
+                      zip
+                      email
+                      phone))
+        (output match)
+        (instances (read-instances-from-csv "decision-trees.csv")))
     (let ((root (make-node #f #f #f #f #f #f '())))
-      (id3 (length instances)
-           instances
-           (list address
-                 first-name
-                 ;; last-name
-                 city
-                 state
-                 zip
-                 email
-                 phone)
-           match
-           root)
-      ;; (write-tree-to-png root "decision-trees.png")
-      ;; (run (sxiv "decision-trees.png"))
+      (id3 (length instances) instances inputs output root)
+      (write-tree-to-png root "decision-trees.png")
+      (run (sxiv "decision-trees.png"))
       (let ((instance (list-ref instances (random (length instances)))))
         (call-with-values (lambda () (classify root instance))
           (lambda (classification probability entropy)
@@ -340,6 +363,11 @@
                      expected-classification
                      (eq? classification expected-classification)
                      probability
-                     entropy))))))))
+                     entropy))))))
+
+    (let ((experiment (run-experiment instances inputs output)))
+      (format #t "Right: ~a~%Wrong: ~a~%"
+              (hash-table-ref experiment #t)
+              (hash-table-ref experiment #f)))))
 
 ;; Implementation:1 ends here
