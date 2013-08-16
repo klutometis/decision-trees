@@ -206,7 +206,7 @@
                                                           best-partition
                                                           #t
                                                           '()) best-input)))
-                         (format "~a = ?"
+                         (format "~a?"
                                  (attribute-name best-input))))
                     (node-predicate-set!
                      root
