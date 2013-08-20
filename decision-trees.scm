@@ -255,7 +255,7 @@
 ;; (trace maybe-create-label)
 
 (define (write-tree-as-dot root)
-  (write-dot-preamble)
+  (write-graph-preamble)
   (let ((labels (make-hash-table)))
     (let iter ((root root))
       (let ((root-label (maybe-create-label labels root)))
@@ -277,7 +277,7 @@
                                     child-label
                                     `((label . ,(edge-value edge))))))
             edges)))))
-  (write-dot-postscript))
+  (write-graph-postamble))
 
 (define (write-tree-to-png root png)
   (let ((dot (create-temporary-file ".dot")))
